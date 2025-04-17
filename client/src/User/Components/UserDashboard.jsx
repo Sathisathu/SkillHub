@@ -2,14 +2,28 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "../api/axios";
 import { HomeCards } from "../Pages/HomeCards";
-import logo from "../assets/logo.jpg";
 import HomeImage from "../assets/HomeImage.avif";
 import LeaderBoard from "./LeaderBoard";
+import DashboardHeader from "./DashboardHeader";
+import DashboardTabs from "./DashboardTabs";
+import ProfileSection from "./ProfileSection";
+import SearchResultsOverlay from "./SearchResultsOverlay";
+import SkillbucksSection from "./SkillbucksSection";
 
 const UserDashboard = () => {
-  const [activeTab, setActiveTab] = useState("Home");
+  const [activeTab, setActiveTab] = useState("Explore");
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [profileFormData, setProfileFormData] = useState({
+    teachSkills: '',
+    learnSkills: '',
+    name: ''
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedProfilePicture, setSelectedProfilePicture] = useState(null);
+  const [profilePictureError, setProfilePictureError] = useState(null);
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState(null);
 
   const fetchUserData = async () => {
     try {
@@ -36,6 +50,16 @@ const UserDashboard = () => {
     fetchUserData();
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      setProfileFormData({
+        teachSkills: user.teachSkills ? user.teachSkills.join(', ') : '',
+        learnSkills: user.learnSkills ? user.learnSkills.join(', ') : '',
+        name: user.name || '',
+      });
+    }
+  }, [user]);
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     navigate("/");
@@ -45,21 +69,138 @@ const UserDashboard = () => {
     setActiveTab(tabName);
   };
 
+  const handleInputChange = (e) => {
+    setProfileFormData({ ...profileFormData, [e.target.name]: e.target.value });
+  };
+
+  const handleProfilePictureChange = (e) => {
+    setProfilePictureError(null);
+    setUploadSuccessMessage(null);
+    const file = e.target.files[0];
+
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setProfilePictureError('Please select a valid image file.');
+        setSelectedProfilePicture(null);
+        return;
+      }
+      setSelectedProfilePicture(file);
+    } else {
+      setSelectedProfilePicture(null);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    setUploadSuccessMessage(null);
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      navigate('/');
+      return;
+    }
+
+    try {
+      const skillsToTeach = profileFormData.teachSkills
+        .split(',')
+        .map(skill => skill.trim())
+        .filter(Boolean);
+
+      const skillsToLearn = profileFormData.learnSkills
+        .split(',')
+        .map(skill => skill.trim())
+        .filter(Boolean);
+
+      const updatedProfileData = {
+        teachSkills: skillsToTeach,
+        learnSkills: skillsToLearn,
+        name: profileFormData.name
+      };
+
+      // Upload profile picture first if one is selected
+      if (selectedProfilePicture) {
+        const formData = new FormData();
+        formData.append('profilePicture', selectedProfilePicture);
+
+        const pictureUploadRes = await axios.put('/user/profile/picture', formData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+
+        setUser(prevUser => ({
+          ...prevUser,
+          profilePicture: pictureUploadRes.data.user.profilePicture, // Make sure backend returns full user
+        }));
+
+        setUploadSuccessMessage('Profile picture updated!');
+        setProfilePictureError(null);
+      }
+
+      const res = await axios.put('/user/profile/update', updatedProfileData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      alert('Profile updated successfully!');
+      setUser(res.data.user); // Set updated user state
+    } catch (error) {
+      console.error("Profile update error:", error);
+      setProfilePictureError('Profile update failed.');
+    }
+  };
+
+  const handleSearchInputChange = (e) => {
+    const newQuery = e.target.value;
+    setSearchQuery(newQuery);
+    if (!newQuery.trim()) {
+      setSearchResults([]);
+    }
+  };
+
+  const handleSearchSubmit = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        navigate('/');
+        return;
+      }
+
+      const res = await axios.get(`/user/search?query=${searchQuery}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setSearchResults(res.data.results);
+    } catch (error) {
+      console.error('Search error:', error);
+      alert('Search failed.');
+      setSearchResults([]);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "Explore":
         return (
           <div>
             <div className="flex">
-            <div className="flex justify-center my-6 w-[50%]">
-              <img src={HomeImage} width="550px" height="550px" />
-            </div>
-            <div className="w-[50%]">
-            <div className=" mt-32 font-semibold text-3xl text-center">
-              Collaborative Skill Sharing Hub
-            </div>
-            <div className="text-lg px-14 mt-10">Connect, share, and grow your skills with a vibrant community of learners and mentors.
-            Teach what you know, learn what you love — all in one place.</div></div>
+              <div className="flex justify-center my-6 w-[50%]">
+                <img src={HomeImage} width="550px" height="500px" alt="Explore" />
+              </div>
+              <div className="w-[50%]">
+                <div className="mt-32 font-semibold text-3xl text-center">
+                  Collaborative Skill Sharing Hub
+                </div>
+                <div className="text-lg px-14 mt-10">
+                  Connect, share, and grow your skills with a vibrant community of learners and mentors.
+                  Teach what you know, learn what you love — all in one place.
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-rows-2 grid-cols-5 gap-8 bg-secondary px-48 py-14 mt-10">
@@ -83,14 +224,20 @@ const UserDashboard = () => {
       case "Skillbucks":
         return (
           <div className="text-center mt-10 text-xl text-gray-700">
-            Skillbucks Content Coming Soon...
+            <SkillbucksSection/>
           </div>
         );
       case "Profile":
         return (
-          <div className="text-center mt-10 text-xl text-gray-700">
-            Profile Details Here
-          </div>
+          <ProfileSection
+            user={user}
+            profileFormData={profileFormData}
+            handleInputChange={handleInputChange}
+            handleUpdateProfile={handleUpdateProfile}
+            handleProfilePictureChange={handleProfilePictureChange}
+            profilePictureError={profilePictureError}
+            uploadSuccessMessage={uploadSuccessMessage}
+          />
         );
       default:
         return (
@@ -101,66 +248,30 @@ const UserDashboard = () => {
     }
   };
 
-  if (!user)
+  if (!user) {
     return (
       <div className="text-center py-20 text-lg text-gray-500">
         Loading dashboard...
       </div>
     );
+  }
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Top 20% Navbar */}
-      <div className="h-[20%]">
-        {/* Header */}
-        <div className=" flex items-center justify-between px-6  py-2 shadow bg-white">
-          <div className="flex items-center gap-2">
-            <img src={logo} alt="Logo" className="h-16 w-16 object-cover" />
-            <span className="text-xl font-semibold text-gray-800">
-              SkillHub
-            </span>
-          </div>
-
-          <div className="flex-1 mx-10">
-            <input
-              type="text"
-              placeholder="Search skills or people..."
-              className="w-full max-w-lg px-4 py-2 rounded-lg border border-gray-400 focus:outline-none"
-            />
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button
-              className="px-4 py-2 border bg-secondary text-white rounded-full hover:bg-primary transition"
-              onClick={handleLogout}
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-
-        {/* Sub-header */}
-        <div className=" flex items-center justify-center  py-4">
-          <ul className="flex justify-center items-center rounded-full">
-            {["Explore", "Leaderboard", "Skillbucks", "Profile"].map((tab) => (
-              <li
-                key={tab}
-                className={`hover:cursor-pointer p-2 rounded-full px-4 mx-2 ${
-                  activeTab === tab ? "bg-secondary text-white" : ""
-                }`}
-                onClick={() => handleTabClick(tab)}
-              >
-                {tab}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {/* Bottom 80% Main Content */}
+    <div className="flex flex-col h-screen relative">
+      <DashboardHeader
+        searchQuery={searchQuery}
+        handleSearchInputChange={handleSearchInputChange}
+        handleSearchSubmit={handleSearchSubmit}
+        handleLogout={handleLogout}
+      />
+      <DashboardTabs activeTab={activeTab} handleTabClick={handleTabClick} />
       <div className="h-[80%] overflow-y-auto">
         {renderContent()}
       </div>
+      <SearchResultsOverlay
+        searchResults={searchResults}
+        searchQuery={searchQuery}
+      />
     </div>
   );
 };
